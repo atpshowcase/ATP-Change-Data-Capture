@@ -1,0 +1,37 @@
+
+# SELECT ALL
+
+SELECT * FROM sys.tables
+WHERE is_tracked_by_cdc = 1;
+
+# Enabled Table CDC
+
+EXEC sys.sp_cdc_enable_table
+    @source_schema = 'dbo',  -- Schema of the source table
+    @source_name = 'mstTenant',  -- Table name
+    @role_name = NULL,  -- Optional: Role for permissions
+    @supports_net_changes = 0;  -- Optional: Net changes (0 = Disabled, 1 = Enabled)
+    
+# Disabled Table CDC
+
+EXEC sys.sp_cdc_disable_table
+    @capture_instance = 'dbo_mstTenant',  -- Replace with the capture instance name
+    @source_schema = 'dbo', 
+    @source_name = 'mstTenant';
+
+===============================================================================================================================================================
+
+# Note
+- Whitelist = when a table is added to the whitelist, it will be connected to Apache Kafka and can be subscribed to
+- If it's not whitelisted, it will only appear in Debezium and just store the logs
+
+
+Auth Airflow
+user: airflow 
+password: airflow
+
+Make sure python 3.11 version
+
+1. Install Apache Airflow Python
+pip install apache-airflow
+pip install google-re2

@@ -1,0 +1,9 @@
+curl -X POST http://localhost:8080/api/v1/main/executions/company.team/gerbil_427872?labels=key:mstOrder2 \
+  -H "Content-Type: multipart/form-data" \
+  -F "orderId=2" \
+  -F "status=NEW" \
+  -F "before={\"id\":2,\"SONumber\":\"6\",\"Product\":\"Cable\",\"RegionID\":1,\"CreatedDate\":1749157884137}" \
+  -F "after={\"id\":2,\"SONumber\":\"7\",\"Product\":\"Cable\",\"RegionID\":1,\"CreatedDate\":1749157884137}" \
+  -F "source={\"version\":\"2.4.2.Final\",\"connector\":\"sqlserver\",\"name\":\"fullfillment\",\"ts_ms\":1751196973950,\"snapshot\":\"false\",\"db\":\"TBiGSys\",\"schema\":\"dbo\",\"table\":\"mstOrder\",\"event_serial_no\":2,\"change_lsn\":\"00000043:00000a41:0002\",\"commit_lsn\":\"00000043:00000a41:0003\"}" \
+  -F "op=u" \
+  -F "ts_ms=1751196975546"
