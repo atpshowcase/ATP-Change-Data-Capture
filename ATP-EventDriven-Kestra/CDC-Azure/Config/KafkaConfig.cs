@@ -7,5 +7,8 @@
 
         public const string OrderTopic = "fullfillment_mstOrder.TBiGSys.dbo.mstOrder";
         public const string TenantTopic = "fullfillment_mstTenant.TBiGSys.dbo.mstTenant";
+
+
+        public const string EmailTopic = "sendEmail";
     }
 }

@@ -27,8 +27,12 @@ internal class Program
                     services.AddSingleton(new SqlConnectionFactory(SqlConfig.SqlConnectionString));
                     services.AddSingleton<OrderService>();
                     services.AddSingleton<TenantService>();
+
                     services.AddSingleton<OrderConsumer>();
                     services.AddSingleton<TenantConsumer>();
+                    services.AddSingleton<EmailConsumer>();
+
+                    services.AddSingleton(new KafkaProducer("localhost:9092"));
                 })
                 .ConfigureLogging(logging =>
                 {
@@ -39,6 +43,11 @@ internal class Program
 
             var orderConsumer = host.Services.GetRequiredService<OrderConsumer>();
             var tenantConsumer = host.Services.GetRequiredService<TenantConsumer>();
+            var emailConsumer = host.Services.GetRequiredService<EmailConsumer>();
+
+            var producer = host.Services.GetRequiredService<KafkaProducer>();
+            await producer.SendEmailMessageAsync("Halo ini test email event!");
+
 
             var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (s, e) =>
@@ -49,12 +58,13 @@ internal class Program
 
             var orderTask = Task.Run(() => orderConsumer.Start(cts.Token));
             var tenantTask = Task.Run(() => tenantConsumer.Start(cts.Token));
+            var emailTask = Task.Run(() => emailConsumer.Start(cts.Token));
 
             try
             {
                 Console.WriteLine($"[INFO] Menjalankan consumer (Percobaan ke-{attempt})...");
                 await Task.WhenAll(orderTask, tenantTask);
-                break; // Jika berhasil, keluar dari loop
+                break;
             }
             catch (Exception ex)
             {
