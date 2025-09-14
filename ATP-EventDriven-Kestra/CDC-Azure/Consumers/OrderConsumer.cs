@@ -1,7 +1,8 @@
-﻿using Confluent.Kafka;
-using CDC_Azure.Config;
+﻿using CDC_Azure.Config;
 using CDC_Azure.Helpers;
 using CDC_Azure.Models;
+using CDC_Azure.Services;
+using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
@@ -10,11 +11,12 @@ namespace CDC_Azure.Consumers
     public class OrderConsumer
     {
         private readonly ILogger<OrderConsumer> _logger;
-        private bool cdcEnabled = true;
+        private readonly OrderService _orderService;
 
-        public OrderConsumer(ILogger<OrderConsumer> logger)
+        public OrderConsumer(ILogger<OrderConsumer> logger, OrderService orderService)
         {
             _logger = logger;
+            _orderService = orderService;
         }
 
         public async Task Start(CancellationToken token)
@@ -23,91 +25,100 @@ namespace CDC_Azure.Consumers
             {
                 BootstrapServers = KafkaConfig.BootstrapServers,
                 GroupId = KafkaConfig.GroupId,
-                AutoOffsetReset = AutoOffsetReset.Earliest
+                AutoOffsetReset = AutoOffsetReset.Earliest,
+                EnableAutoCommit = true
             };
 
             var options = JsonConverterHelper.GetDefaultOptions();
 
             using var consumer = new ConsumerBuilder<Ignore, string>(config).Build();
-            consumer.Subscribe(KafkaConfig.Topic);
+            consumer.Subscribe(KafkaConfig.OrderTopic);
+
+            _logger.LogInformation($"[Kafka] Subscribed to topic: {KafkaConfig.OrderTopic}");
 
             try
             {
                 while (!token.IsCancellationRequested)
                 {
-                    var result = consumer.Consume(token);
-                    _logger.LogInformation($"📦 Received: {result.Message.Value}");
-
-                    if (!cdcEnabled)
+                    try
                     {
-                        await Task.Delay(2000, token); // delay even if CDC is disabled
-                        continue;
+                        var result = consumer.Consume(token);
+
+                        // Log pesan mentah dari Kafka
+                        _logger.LogInformation($"[Kafka] Raw message: {result.Message.Value}");
+
+                        using var jsonDoc = JsonDocument.Parse(result.Message.Value);
+
+                        // Kalau pesan heartbeat, tidak ada payload → skip
+                        if (!jsonDoc.RootElement.TryGetProperty("payload", out var payloadElement))
+                        {
+                            _logger.LogWarning("[Kafka] Message does not have payload. Skipping.");
+                            continue;
+                        }
+
+                        // Deserialize payload ke dalam model
+                        DebeziumPayload<mstOrder>? payload;
+                        try
+                        {
+                            payload = JsonSerializer.Deserialize<DebeziumPayload<mstOrder>>(payloadElement.ToString(), options);
+                        }
+                        catch (JsonException ex)
+                        {
+                            _logger.LogError($"[Kafka] Failed to deserialize payload: {ex.Message}");
+                            _logger.LogError($"[Kafka] Payload raw: {payloadElement}");
+                            continue;
+                        }
+
+                        // Kalau after == null → berarti delete event atau snapshot
+                        if (payload?.after == null)
+                        {
+                            _logger.LogInformation("[Kafka] No 'after' data found, skipping message.");
+                            continue;
+                        }
+
+                        // Build input untuk Kestra
+                        var inputs = new Dictionary<string, object>
+                        {
+                            ["orderId"] = payload.after.SONumber ?? "",
+                            //["status"] = payload.after.Status ?? "",
+                            ["status"] = payload.after?.SONumber ?? "",
+                            ["before"] = payload.before,
+                            ["after"] = payload.after,
+                            ["source"] = payload.source,
+                            ["op"] = payload.op,
+                            ["ts_ms"] = payload.ts_ms
+                        };
+
+                        // Trigger flow Kestra
+                        var execId = await KestraHelper.TriggerFlowTBiGSys(inputs);
+                        _logger.LogInformation($"[Kestra] Flow triggered. ExecID: {execId}");
+
+                        // Simpan order
+                        await _orderService.CreateOrder(execId, token);
                     }
-
-                    //var payload = JsonSerializer.Deserialize<DebeziumPayload<mstOrder>>(result.Message.Value);
-                    var payload = JsonSerializer.Deserialize<DebeziumPayload<mstOrder>>(result.Message.Value, options);
-
-                    var inputs = new Dictionary<string, object>
+                    catch (ConsumeException ex)
                     {
-                        ["orderId"] = "salamander_445751",
-                        ["status"] = payload.after?.SONumber ?? "",
-                        ["before"] = payload.before,
-                        ["after"] = payload.after,
-                        ["source"] = payload.source,
-                        ["op"] = payload.op,
-                        ["ts_ms"] = payload.ts_ms
-                    };
-
-
-                    // Trigger the existing flow using its namespace, ID, and webhook key
-                    //var execId = await KestraTrigger.TriggerExistingFlowWithWebhookAsync(
-                    //    ns: "dev223", // The namespace of your deployed flow
-                    //    flowId: "TBiGSys.dbo.mstOrder", // The ID of your deployed flow
-                    //    webhookKey: "your_secret_and_unique_webhook_key_123", // The 'key' from your webhook trigger
-                    //    inputs: inputs
-                    //);
-
-                    var execId = await KestraTrigger.TriggerFlowMultipartAsync(@"
-                        id: salamander_445751
-                        namespace: company.team
-                        tasks:
-                          - id: hello
-                            type: io.kestra.plugin.core.log.Log
-                            message: Hello World! 🚀
-                        inputs:
-                          - name: orderId
-                            type: STRING
-                          - name: status
-                            type: STRING
-                          - name: before
-                            type: JSON
-                          - name: after
-                            type: JSON
-                          - name: source
-                            type: JSON
-                          - name: op
-                            type: STRING
-                          - name: ts_ms
-                            type: STRING", inputs
-                    );
-
-                    //var execId = await KestraTrigger.TriggerFlowMultipartAsync(
-                    //    "company.team",
-                    //    "salamander_445751",
-                    //    inputs
-                    //);
-
-                    _ = Task.Run(() => KestraMonitor.MonitorExecutionAsync(execId, token));
+                        _logger.LogError($"[Kafka] Consume error: {ex.Error.Reason}");
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogError($"[Kafka] JSON parse error: {ex.Message}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"[Kafka] Unexpected error: {ex.Message}");
+                    }
                 }
             }
             catch (OperationCanceledException)
             {
-                _logger.LogWarning("🛑 Consumer stopped.");
+                _logger.LogWarning("OrderConsumer stopped.");
             }
-
-            await Task.Delay(2000, token); // ⏲️ Delay 2 seconds before next consume
+            finally
+            {
+                consumer.Close();
+                _logger.LogInformation("Kafka consumer closed.");
+            }
         }
-
-        public void EnableCDC(bool enabled) => cdcEnabled = enabled;
     }
 }

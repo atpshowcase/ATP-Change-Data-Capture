@@ -2,10 +2,14 @@
 {
     public class mstTenant
     {
-        public int id { get; set; }
-        public string tenant_name { get; set; }
-        public string address { get; set; }
-        public string phone_number { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public string TenantID { get; set; }
+        public string SiteID { get; set; }
+        public string CustomerID { get; set; }
+        public string CustomerSiteID { get; set; }
+        public string CustomerSiteName { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public string CreatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
+        public string UpdatedBy { get; set; }
     }
 }

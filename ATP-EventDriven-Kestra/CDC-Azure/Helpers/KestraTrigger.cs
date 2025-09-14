@@ -78,11 +78,11 @@ namespace CDC_Azure.Helpers
                 form.Add(content);
             }
 
-            var response = await _httpClient.PostAsync(url, form);
+            var response = await KestraHttpClient.Client.PostAsync(url, form);
             var json = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                throw new Exception($"Kestra trigger failed: {response.StatusCode} - {json}");
+            throw new Exception($"Kestra trigger failed: {response.StatusCode} - {json}");
 
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.GetProperty("id").GetString()!;

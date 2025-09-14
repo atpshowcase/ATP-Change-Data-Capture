@@ -17,7 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Consumers\BaseConsumer.cs" />
-    <Compile Remove="Consumers\TenantConsumer.cs" />
     <Compile Remove="Function1.cs" />
     <Compile Remove="Models\mstSite.cs" />
   </ItemGroup>
